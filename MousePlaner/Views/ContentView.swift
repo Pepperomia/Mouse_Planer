@@ -49,6 +49,22 @@ struct ContentView: View {
         projects.filter { $0.isArchived }
     }
     
+    private func loadData() {
+        if let loaded = DataManager.shared.load() {
+            workTasks = loaded.workTasks
+            personalTasks = loaded.personalTasks
+            projects = loaded.projects
+        }
+    }
+
+    private func saveData() {
+        DataManager.shared.save(
+            workTasks: workTasks,
+            personalTasks: personalTasks,
+            projects: projects
+        )
+    }
+    
     // MARK: - Body
     var body: some View {
         NavigationStack {
@@ -119,6 +135,9 @@ struct ContentView: View {
                     onDelete: { deleteProject($0) },
                     onArchive: { archiveProject($0) }
                 )
+            }
+            .onAppear {
+                    loadData()
             }
         }
     }
@@ -566,6 +585,7 @@ extension ContentView {
                 projects[projectIndex] = projects[projectIndex]
             }
         }
+        saveData()
     }
 
     func unarchiveProject(_ project: Project) {
@@ -573,6 +593,7 @@ extension ContentView {
             projects[index].isArchived = false
             projects = projects
         }
+        saveData()
     }
     
     func completeTask(_ task: Task) {
@@ -592,6 +613,7 @@ extension ContentView {
                 projects[projectIndex] = projects[projectIndex]
             }
         }
+        saveData()
     }
     
     // MARK: - Project Management
@@ -603,6 +625,7 @@ extension ContentView {
             tasks: []
         )
         projects.append(newProject)
+        saveData()
     }
     
     func updateProject(_ updatedProject: Project) {
@@ -610,10 +633,12 @@ extension ContentView {
             projects[index] = updatedProject
             projects = projects
         }
+        saveData()
     }
     
     func deleteProject(_ project: Project) {
         projects.removeAll { $0.id == project.id }
+        saveData()
     }
     
     func archiveProject(_ project: Project) {
@@ -621,6 +646,7 @@ extension ContentView {
             projects[index].isArchived = true
             projects = projects
         }
+        saveData()
     }
     
     // MARK: - Task Management
@@ -645,6 +671,7 @@ extension ContentView {
         } else {
             personalTasks.append(task)
         }
+        saveData()
     }
     
     func updateTask(
@@ -673,6 +700,7 @@ extension ContentView {
                 projects[projectIndex] = projects[projectIndex]
             }
         }
+        saveData()
     }
     
     func editTask(_ task: Task) {
@@ -686,6 +714,7 @@ extension ContentView {
         for projectIndex in projects.indices {
             projects[projectIndex].tasks.removeAll { $0.id == task.id }
         }
+        saveData()
     }
     
     // MARK: - Helpers
