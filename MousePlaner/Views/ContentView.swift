@@ -153,7 +153,24 @@ struct ContentView: View {
             }
             
             Spacer()
-        }
+            
+            NavigationLink(destination: ArchiveView(
+                        archivedTasks: archivedTasks,
+                        archivedProjects: archivedProjects,
+                        onUnarchiveTask: { task in unarchiveTask(task) },
+                        onUnarchiveProject: { project in unarchiveProject(project) },
+                        onDeleteTask: { task in deleteTask(task) },
+                        onDeleteProject: { project in deleteProject(project) }
+                    )) {
+                        Image("Mouse_Done") // твоя мышка для архива
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 95, height: 95)
+                            .background(
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
         .padding(.vertical, 8)
     }
     
@@ -529,6 +546,54 @@ extension ContentView {
         }
     }
     
+
+    func unarchiveTask(_ task: Task) {
+        // Находим задачу и убираем флаг isArchived
+        if let index = workTasks.firstIndex(where: { $0.id == task.id }) {
+            workTasks[index].isArchived = false
+            workTasks[index].isCompleted = false // опционально
+        }
+        
+        if let index = personalTasks.firstIndex(where: { $0.id == task.id }) {
+            personalTasks[index].isArchived = false
+            personalTasks[index].isCompleted = false
+        }
+        
+        for projectIndex in projects.indices {
+            if let taskIndex = projects[projectIndex].tasks.firstIndex(where: { $0.id == task.id }) {
+                projects[projectIndex].tasks[taskIndex].isArchived = false
+                projects[projectIndex].tasks[taskIndex].isCompleted = false
+                projects[projectIndex] = projects[projectIndex]
+            }
+        }
+    }
+
+    func unarchiveProject(_ project: Project) {
+        if let index = projects.firstIndex(where: { $0.id == project.id }) {
+            projects[index].isArchived = false
+            projects = projects
+        }
+    }
+    
+    func completeTask(_ task: Task) {
+        if let index = workTasks.firstIndex(where: { $0.id == task.id }) {
+            workTasks[index].isCompleted = true
+            workTasks[index].isArchived = true  // ✅ добавить эту строку
+        }
+        if let index = personalTasks.firstIndex(where: { $0.id == task.id }) {
+            personalTasks[index].isCompleted = true
+            personalTasks[index].isArchived = true  // ✅ добавить эту строку
+        }
+        
+        for projectIndex in projects.indices {
+            if let taskIndex = projects[projectIndex].tasks.firstIndex(where: { $0.id == task.id }) {
+                projects[projectIndex].tasks[taskIndex].isCompleted = true
+                projects[projectIndex].tasks[taskIndex].isArchived = true  // ✅ добавить эту строку
+                projects[projectIndex] = projects[projectIndex]
+            }
+        }
+    }
+    
     // MARK: - Project Management
     func addProject(title: String, description: String?, scope: TaskScope) {
         let newProject = Project(
@@ -605,22 +670,6 @@ extension ContentView {
                 projects[projectIndex].tasks[taskIndex].title = newTitle
                 projects[projectIndex].tasks[taskIndex].description = newDescription
                 projects[projectIndex].tasks[taskIndex].deadline = newDeadline
-                projects[projectIndex] = projects[projectIndex]
-            }
-        }
-    }
-    
-    func completeTask(_ task: Task) {
-        if let index = workTasks.firstIndex(where: { $0.id == task.id }) {
-            workTasks[index].isCompleted = true
-        }
-        if let index = personalTasks.firstIndex(where: { $0.id == task.id }) {
-            personalTasks[index].isCompleted = true
-        }
-        
-        for projectIndex in projects.indices {
-            if let taskIndex = projects[projectIndex].tasks.firstIndex(where: { $0.id == task.id }) {
-                projects[projectIndex].tasks[taskIndex].isCompleted = true
                 projects[projectIndex] = projects[projectIndex]
             }
         }
