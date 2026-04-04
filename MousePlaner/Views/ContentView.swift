@@ -29,6 +29,7 @@ struct ContentView: View {
     // MARK: - Sheets
     @State private var showAdd = false
     @State private var showAddProject = false
+    @State private var showSettings = false
     
     // MARK: - Computed Properties
     var activeCount: Int {
@@ -54,7 +55,12 @@ struct ContentView: View {
             workTasks = loaded.workTasks
             personalTasks = loaded.personalTasks
             projects = loaded.projects
+            updateAllNotifications()
         }
+    }
+    private func updateAllNotifications() {
+        let allTasks = workTasks + personalTasks + projects.flatMap { $0.tasks }
+        NotificationManager.shared.scheduleAllTasksNotifications(tasks: allTasks)
     }
 
     private func saveData() {
@@ -63,6 +69,7 @@ struct ContentView: View {
             personalTasks: personalTasks,
             projects: projects
         )
+        updateAllNotifications()
     }
     
     // MARK: - Body
@@ -136,8 +143,14 @@ struct ContentView: View {
                     onArchive: { archiveProject($0) }
                 )
             }
+            
+            .sheet(isPresented: $showSettings) {
+                SettingsView()
+            }
+            
             .onAppear {
                     loadData()
+                    NotificationManager.shared.requestAuthorization()
             }
         }
     }
@@ -145,13 +158,19 @@ struct ContentView: View {
     // MARK: - Header
     var header: some View {
         HStack(spacing: 16) {
-            Image(selectedMainTab == 0 ? "Mouse_Plan" : "Mouse_Project")
-                .resizable()
-                .scaledToFit()
-                .frame(width: 100, height: 100)
-                .shadow(color: Color.customBlueLight.opacity(0.3), radius: 10)
-                .scaleEffect(selectedMainTab == 0 ? 1.0 : 0.95)
-                .animation(.spring(response: 0.6, dampingFraction: 0.7), value: selectedMainTab)
+            // ✅ Mouse_Plan теперь КНОПКА настроек
+            Button {
+                showSettings = true
+            } label: {
+                Image(selectedMainTab == 0 ? "Mouse_Plan" : "Mouse_Project")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 100, height: 100)
+                    .shadow(color: Color.customBlueLight.opacity(0.3), radius: 10)
+                    .scaleEffect(selectedMainTab == 0 ? 1.0 : 0.95)
+                    .animation(.spring(response: 0.6, dampingFraction: 0.7), value: selectedMainTab)
+            }
+            .buttonStyle(.plain)
             
             VStack(alignment: .leading, spacing: 6) {
                 Text(selectedMainTab == 0 ? "Мои задачи" : "Мои проекты")
@@ -173,26 +192,25 @@ struct ContentView: View {
             
             Spacer()
             
+            // Кнопка архива (Mouse_Done)
             NavigationLink(destination: ArchiveView(
-                        archivedTasks: archivedTasks,
-                        archivedProjects: archivedProjects,
-                        onUnarchiveTask: { task in unarchiveTask(task) },
-                        onUnarchiveProject: { project in unarchiveProject(project) },
-                        onDeleteTask: { task in deleteTask(task) },
-                        onDeleteProject: { project in deleteProject(project) }
-                    )) {
-                        Image("Mouse_Done") // твоя мышка для архива
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 95, height: 95)
-                            .background(
-                            )
-                    }
-                    .buttonStyle(.plain)
-                }
+                archivedTasks: archivedTasks,
+                archivedProjects: archivedProjects,
+                onUnarchiveTask: { task in unarchiveTask(task) },
+                onUnarchiveProject: { project in unarchiveProject(project) },
+                onDeleteTask: { task in deleteTask(task) },
+                onDeleteProject: { project in deleteProject(project) }
+            )) {
+                Image("Mouse_Done")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 95, height: 95)
+            }
+            .buttonStyle(.plain)
+            
+        }
         .padding(.vertical, 8)
     }
-    
     // MARK: - Modern Tabs
     var modernTabsView: some View {
         VStack(spacing: 12) {
@@ -613,6 +631,7 @@ extension ContentView {
                 projects[projectIndex] = projects[projectIndex]
             }
         }
+        NotificationManager.shared.cancelNotification(for: task)
         saveData()
     }
     
