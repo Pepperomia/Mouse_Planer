@@ -4,11 +4,11 @@ import SwiftUI
 struct AddProjectSheet: View {
     @Environment(\.dismiss) var dismiss
     
-    let onSave: (String, String?, TaskScope) -> Void
+    let scope: TaskScope  // ← передаём из ContentView
+    let onSave: (String, String?) -> Void  // ← убрали scope из замыкания
     
     @State private var title = ""
     @State private var description = ""
-    @State private var selectedScope: TaskScope = .work
     
     var body: some View {
         NavigationStack {
@@ -30,17 +30,23 @@ struct AddProjectSheet: View {
                                     .font(.body)
                             }
                             
-                            // Тип проекта
+                            // ✅ Информация о типе проекта (просто показываем, не даём выбрать)
                             VStack(alignment: .leading, spacing: 8) {
                                 Text("Тип проекта")
                                     .font(.subheadline)
                                     .foregroundColor(.gray)
                                 
-                                Picker("Тип", selection: $selectedScope) {
-                                    Text("Рабочий").tag(TaskScope.work)
-                                    Text("Личный").tag(TaskScope.personal)
+                                HStack {
+                                    Image(systemName: scope == .work ? "briefcase" : "person")
+                                        .foregroundColor(Color.customBlueLight)
+                                    Text(scope == .work ? "Рабочий" : "Личный")
+                                        .font(.subheadline)
+                                    Spacer()
                                 }
-                                .pickerStyle(.segmented)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 10)
+                                .background(Color.customBlueLight.opacity(0.1))
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
                             }
                             
                             // Поле описания
@@ -60,7 +66,7 @@ struct AddProjectSheet: View {
                     }
                     .padding(.horizontal, 20)
                     .padding(.top, 20)
-                    .padding(.bottom, 80) // Место для мышки
+                    .padding(.bottom, 80)
                 }
                 
                 // Мышь
@@ -92,7 +98,7 @@ struct AddProjectSheet: View {
                 
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Создать") {
-                        onSave(title, description.isEmpty ? nil : description, selectedScope)
+                        onSave(title, description.isEmpty ? nil : description)
                         dismiss()
                     }
                     .fontWeight(.semibold)

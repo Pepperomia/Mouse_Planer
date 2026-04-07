@@ -2,81 +2,102 @@
 import SwiftUI
 
 struct ProjectDetailView: View {
-    @Environment(\.dismiss) var dismiss
     
     let project: Project
     let onSave: (Project) -> Void
     let onDelete: (Project) -> Void
     let onArchive: (Project) -> Void
     
+    @Environment(\.dismiss) var dismiss
+    
+    @State private var isEditing = false
     @State private var editedTitle: String
     @State private var editedDescription: String
+    @State private var editedScope: TaskScope
     @State private var tasks: [Task]
-    @State private var isEditing = false
     @State private var showAddTask = false
+    @State private var selectedTask: Task?
     
-    init(project: Project,
-         onSave: @escaping (Project) -> Void,
-         onDelete: @escaping (Project) -> Void,
-         onArchive: @escaping (Project) -> Void) {
+    init(
+        project: Project,
+        onSave: @escaping (Project) -> Void,
+        onDelete: @escaping (Project) -> Void,
+        onArchive: @escaping (Project) -> Void
+    ) {
         self.project = project
         self.onSave = onSave
         self.onDelete = onDelete
         self.onArchive = onArchive
         _editedTitle = State(initialValue: project.title)
         _editedDescription = State(initialValue: project.description ?? "")
+        _editedScope = State(initialValue: project.scope)
         _tasks = State(initialValue: project.tasks)
     }
     
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 20) {
-                    projectInfoCard
-                    tasksSection
+            ZStack {
+                LinearGradient.customBlueGradient
+                    .ignoresSafeArea()
+                
+                ScrollView {
+                    VStack(spacing: 24) {
+                        mainCard
+                        tasksSection
+                        
+                        if !isEditing {
+                            actionButtons
+                        }
+                    }
+                    .padding(.horizontal)
+                    .padding(.top, 20)
+                    .padding(.bottom, 40)
                 }
-                .padding()
+                
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        Image("Mouse_ProjectIn")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 160, height: 160)
+                            .padding(.trailing, 8)
+                            .padding(.bottom, 8)
+                    }
+                }
             }
-            .background(Color.adaptiveBackground)
-            .navigationTitle(isEditing ? "Редактирование" : project.title)
-            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Закрыть") { dismiss() }
+                    Button(action: { dismiss() }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left")
+                            Text("Назад")
+                        }
+                        .foregroundColor(.white)
+                    }
                 }
                 
                 ToolbarItem(placement: .topBarTrailing) {
-                    HStack {
-                        if !isEditing {
-                            Button {
-                                onArchive(project)
-                                dismiss()
-                            } label: {
-                                Image(systemName: "archivebox")
-                            }
-                            .tint(.orange)
+                    if isEditing {
+                        Button("Сохранить") {
+                            saveChanges()
+                            dismiss()
                         }
-                        
-                        Button(isEditing ? "Сохранить" : "Править") {
-                            if isEditing {
-                                saveChanges()
-                            }
-                            isEditing.toggle()
-                        }
-                        
-                        if !isEditing {
-                            Button(role: .destructive) {
-                                onDelete(project)
-                                dismiss()
-                            } label: {
-                                Image(systemName: "trash")
-                            }
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                    } else {
+                        Button(action: { isEditing = true }) {
+                            Text("Править")
+                                .fontWeight(.semibold)
+                                .foregroundColor(.white)
                         }
                     }
                 }
             }
+            .navigationBarBackButtonHidden(true)
             .sheet(isPresented: $showAddTask) {
-                AddTaskSheet(scope: project.scope) { title, description, deadline, priority in
+                AddTaskSheet(scope: editedScope) { title, description, deadline, priority in
                     addTaskToProject(
                         title: title,
                         description: description,
@@ -85,6 +106,16 @@ struct ProjectDetailView: View {
                     )
                 }
             }
+            .sheet(item: $selectedTask) { task in
+                TaskDetailView(
+                    task: task,
+                    onSave: { updatedTask, newTitle, newDescription, newDeadline in
+                        updateTaskInProject(updatedTask, newTitle, newDescription, newDeadline)
+                    },
+                    onComplete: { completeTask($0) },
+                    onDelete: { deleteTask($0) }
+                )
+            }
         }
     }
     
@@ -92,109 +123,236 @@ struct ProjectDetailView: View {
         var updatedProject = project
         updatedProject.title = editedTitle
         updatedProject.description = editedDescription.isEmpty ? nil : editedDescription
-        updatedProject.tasks = tasks
+        updatedProject.scope = editedScope
+        updatedProject.tasks = tasks.map { task in
+            var updatedTask = task
+            updatedTask.scope = editedScope
+            return updatedTask
+        }
         onSave(updatedProject)
     }
     
-    var projectInfoCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            if isEditing {
-                TextField("Название проекта", text: $editedTitle)
-                    .font(.title2.bold())
-                    .textFieldStyle(.roundedBorder)
-                
-                TextField("Описание", text: $editedDescription, axis: .vertical)
-                    .textFieldStyle(.roundedBorder)
-                    .lineLimit(3...6)
-            } else {
-                if let description = project.description, !description.isEmpty {
-                    Text(description)
-                        .foregroundColor(.gray)
+    // MARK: - UI Components
+    
+    private var mainCard: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 12) {
+                if isEditing {
+                    TextField("Название проекта", text: $editedTitle)
+                        .font(.title.bold())
+                        .textFieldStyle(.roundedBorder)
                 } else {
+                    Text(editedTitle)
+                        .font(.title.bold())
+                        .foregroundColor(.white)
+                }
+                
+                if isEditing {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Тип проекта")
+                            .font(.subheadline)
+                            .foregroundColor(.white.opacity(0.7))
+                        
+                        Picker("Тип проекта", selection: $editedScope) {
+                            Label("Рабочий", systemImage: "briefcase").tag(TaskScope.work)
+                            Label("Личный", systemImage: "person").tag(TaskScope.personal)
+                        }
+                        .pickerStyle(.segmented)
+                        .colorMultiply(.white)
+                    }
+                } else {
+                    HStack {
+                        Image(systemName: editedScope == .work ? "briefcase" : "person")
+                            .foregroundColor(.white.opacity(0.8))
+                        Text(editedScope == .work ? "Рабочий проект" : "Личный проект")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(.white.opacity(0.8))
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color.white.opacity(0.2))
+                    .clipShape(Capsule())
+                }
+            }
+            
+            Divider()
+                .background(Color.white.opacity(0.3))
+            
+            if !isEditing {
+                HStack(spacing: 20) {
+                    StatBadge(
+                        icon: "checkmark.circle",
+                        value: "\(activeTasksCount)",
+                        label: "активных",
+                        color: .green
+                    )
+                    
+                    StatBadge(
+                        icon: "checkmark.circle.fill",
+                        value: "\(completedTasksCount)",
+                        label: "завершено",
+                        color: .gray
+                    )
+                    
+                    StatBadge(
+                        icon: "folder",
+                        value: "\(tasks.count)",
+                        label: "всего",
+                        color: .blue
+                    )
+                }
+                .padding(.vertical, 4)
+            }
+            
+            VStack(alignment: .leading, spacing: 12) {
+                if !isEditing && !editedDescription.isEmpty {
+                    Text("Описание")
+                        .font(.headline)
+                        .foregroundColor(.white.opacity(0.8))
+                }
+                
+                if isEditing {
+                    TextField("Описание", text: $editedDescription, axis: .vertical)
+                        .textFieldStyle(.roundedBorder)
+                        .lineLimit(3...6)
+                } else if !editedDescription.isEmpty {
+                    Text(editedDescription)
+                        .foregroundColor(.white.opacity(0.9))
+                        .padding(.leading, 4)
+                } else if !isEditing {
                     Text("Нет описания")
-                        .foregroundColor(.gray.opacity(0.6))
+                        .foregroundColor(.white.opacity(0.5))
                         .italic()
                 }
-                
-                HStack {
-                    Label("\(activeTasksCount) активных", systemImage: "checkmark.circle")
-                    Spacer()
-                    Label("\(completedTasksCount) завершено", systemImage: "checkmark.circle.fill")
-                }
-                .font(.caption)
-                .foregroundColor(.gray)
             }
         }
-        .padding()
-        .background(Color.adaptiveCard)
-        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .padding(24)
+        .background(.ultraThinMaterial)
+        .background(Color.white.opacity(0.1))
+        .clipShape(RoundedRectangle(cornerRadius: 32))
+        .overlay(
+            RoundedRectangle(cornerRadius: 32)
+                .stroke(Color.white.opacity(0.2), lineWidth: 1)
+        )
     }
     
-    var tasksSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+    private var tasksSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
             HStack {
-                Text("Задачи")
+                Text("📋 Задачи проекта")
                     .font(.headline)
+                    .foregroundColor(.white)
                 
                 Spacer()
                 
-                Button {
-                    showAddTask = true
-                } label: {
-                    Label("Добавить", systemImage: "plus")
-                        .font(.caption)
+                if !isEditing {
+                    Button {
+                        showAddTask = true
+                    } label: {
+                        Label("Добавить", systemImage: "plus")
+                            .font(.caption)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color.white.opacity(0.2))
+                            .clipShape(Capsule())
+                            .foregroundColor(.white)
+                    }
                 }
             }
             
             if tasks.isEmpty {
                 VStack(spacing: 12) {
                     Image(systemName: "checklist")
-                        .font(.largeTitle)
-                        .foregroundColor(.gray.opacity(0.5))
+                        .font(.system(size: 40))
+                        .foregroundColor(.white.opacity(0.5))
                     Text("Нет задач")
                         .font(.subheadline)
-                        .foregroundColor(.gray)
-                    Text("Добавьте первую задачу в проект")
+                        .foregroundColor(.white.opacity(0.6))
+                    Text("Нажмите + чтобы добавить")
                         .font(.caption)
-                        .foregroundColor(.gray.opacity(0.7))
+                        .foregroundColor(.white.opacity(0.4))
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 40)
+                .background(Color.white.opacity(0.1))
+                .clipShape(RoundedRectangle(cornerRadius: 20))
             } else {
                 LazyVStack(spacing: 10) {
                     ForEach(tasks) { task in
-                        TaskCard(
-                            task: task,
-                            onComplete: { completeTask(task) },
-                            onEdit: { editTask(task) },
-                            onDelete: { deleteTask(task) }
-                        )
+                        Button {
+                            openTaskDetail(task)
+                        } label: {
+                            TaskCard(
+                                task: task,
+                                onComplete: { completeTask(task) },
+                                onEdit: { editTask(task) },
+                                onDelete: { deleteTask(task) }
+                            )
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }
         }
-        .padding()
-        .background(Color.adaptiveCard)
-        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .padding(20)
+        .background(.ultraThinMaterial)
+        .background(Color.white.opacity(0.1))
+        .clipShape(RoundedRectangle(cornerRadius: 24))
+        .overlay(
+            RoundedRectangle(cornerRadius: 24)
+                .stroke(Color.white.opacity(0.2), lineWidth: 1)
+        )
     }
     
+    private var actionButtons: some View {
+        VStack(spacing: 12) {
+            Button(action: {
+                onArchive(project)
+                dismiss()
+            }) {
+                Label("Архивировать проект", systemImage: "archivebox.fill")
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.orange)
+                    .foregroundColor(.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+            }
+            
+            Button(action: {
+                onDelete(project)
+                dismiss()
+            }) {
+                Label("Удалить проект", systemImage: "trash.fill")
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.red.opacity(0.9))
+                    .foregroundColor(.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+            }
+        }
+    }
+    
+    // MARK: - Computed Properties
+    
     private var activeTasksCount: Int {
-        tasks.filter { !$0.isCompleted }.count
+        tasks.filter { !$0.isCompleted && !$0.isArchived }.count
     }
     
     private var completedTasksCount: Int {
-        tasks.filter { $0.isCompleted }.count
+        tasks.filter { $0.isCompleted && !$0.isArchived }.count
     }
     
-    // ИСПРАВЛЕННАЯ ФУНКЦИЯ - правильный порядок параметров
+    // MARK: - Task Management
+    
     private func addTaskToProject(title: String, description: String, deadline: Date?, priority: Task.Priority) {
         let newTask = Task(
             title: title,
-            description: description,    
+            description: description,
             deadline: deadline,
             personalType: nil,
             priority: priority,
-            scope: project.scope
+            scope: editedScope
         )
         tasks.append(newTask)
         saveChanges()
@@ -203,16 +361,57 @@ struct ProjectDetailView: View {
     private func completeTask(_ task: Task) {
         if let index = tasks.firstIndex(where: { $0.id == task.id }) {
             tasks[index].isCompleted.toggle()
+            tasks[index].isArchived = tasks[index].isCompleted
             saveChanges()
         }
     }
     
     private func editTask(_ task: Task) {
-        // Можно реализовать редактирование задачи
+        openTaskDetail(task)
     }
     
     private func deleteTask(_ task: Task) {
         tasks.removeAll { $0.id == task.id }
         saveChanges()
+    }
+    
+    // MARK: - Navigation Helpers
+    
+    private func openTaskDetail(_ task: Task) {
+        selectedTask = task
+    }
+    
+    private func updateTaskInProject(_ task: Task, _ newTitle: String, _ newDescription: String?, _ newDeadline: Date?) {
+        if let index = tasks.firstIndex(where: { $0.id == task.id }) {
+            tasks[index].title = newTitle
+            tasks[index].description = newDescription
+            tasks[index].deadline = newDeadline
+            saveChanges()
+        }
+    }
+}
+
+// MARK: - Stat Badge Component
+struct StatBadge: View {
+    let icon: String
+    let value: String
+    let label: String
+    let color: Color
+    
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.caption)
+            Text(value)
+                .font(.headline)
+                .fontWeight(.semibold)
+            Text(label)
+                .font(.caption2)
+        }
+        .foregroundColor(color)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(color.opacity(0.2))
+        .clipShape(Capsule())
     }
 }

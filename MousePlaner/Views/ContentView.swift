@@ -6,7 +6,7 @@ struct ContentView: View {
     
     // MARK: - Data
     @State private var workTasks: [Task] = []
-    @State private var personalTasks: [Task] = []  // ← ИСПРАВЛЕНО: убраны лишние скобки
+    @State private var personalTasks: [Task] = []
     @State private var projects: [Project] = []
     
     // MARK: - UI
@@ -21,6 +21,9 @@ struct ContentView: View {
     @State private var selectedPriority: Task.Priority? = nil
     @State private var onlyWithDeadline = false
     @State private var sortType: SortType = .created
+    @State private var expandedProjects: Set<UUID> = []
+    
+    @State private var selectedProjectTab = 0
     
     enum SortType {
         case created, deadline, priority
@@ -50,6 +53,34 @@ struct ContentView: View {
         projects.filter { $0.isArchived }
     }
     
+    // MARK: - Project Grouping Helpers
+    private func groupTasksByProject(_ tasks: [Task]) -> (byProject: [Project: [Task]], withoutProject: [Task]) {
+        var byProject: [Project: [Task]] = [:]
+        var withoutProject: [Task] = []
+        
+        for task in tasks {
+            if let project = projects.first(where: { $0.tasks.contains(where: { $0.id == task.id }) }) {
+                byProject[project, default: []].append(task)
+            } else {
+                withoutProject.append(task)
+            }
+        }
+        return (byProject, withoutProject)
+    }
+    
+    private func isProjectExpanded(_ projectId: UUID) -> Bool {
+        expandedProjects.contains(projectId)
+    }
+    
+    private func toggleProject(_ projectId: UUID) {
+        if expandedProjects.contains(projectId) {
+            expandedProjects.remove(projectId)
+        } else {
+            expandedProjects.insert(projectId)
+        }
+    }
+    
+    // MARK: - Data Persistence
     private func loadData() {
         if let loaded = DataManager.shared.load() {
             workTasks = loaded.workTasks
@@ -58,6 +89,7 @@ struct ContentView: View {
             updateAllNotifications()
         }
     }
+    
     private func updateAllNotifications() {
         let allTasks = workTasks + personalTasks + projects.flatMap { $0.tasks }
         NotificationManager.shared.scheduleAllTasksNotifications(tasks: allTasks)
@@ -115,8 +147,14 @@ struct ContentView: View {
             
             // Добавление проекта
             .sheet(isPresented: $showAddProject) {
-                AddProjectSheet { title, description, scope in
-                    addProject(title: title, description: description, scope: scope)
+                AddProjectSheet(
+                    scope: selectedProjectTab == 0 ? .work : .personal
+                ) { title, description in
+                    addProject(
+                        title: title,
+                        description: description,
+                        scope: selectedProjectTab == 0 ? .work : .personal
+                    )
                 }
             }
             
@@ -149,8 +187,8 @@ struct ContentView: View {
             }
             
             .onAppear {
-                    loadData()
-                    NotificationManager.shared.requestAuthorization()
+                loadData()
+                NotificationManager.shared.requestAuthorization()
             }
         }
     }
@@ -158,7 +196,6 @@ struct ContentView: View {
     // MARK: - Header
     var header: some View {
         HStack(spacing: 16) {
-            // ✅ Mouse_Plan теперь КНОПКА настроек
             Button {
                 showSettings = true
             } label: {
@@ -192,7 +229,6 @@ struct ContentView: View {
             
             Spacer()
             
-            // Кнопка архива (Mouse_Done)
             NavigationLink(destination: ArchiveView(
                 archivedTasks: archivedTasks,
                 archivedProjects: archivedProjects,
@@ -207,10 +243,10 @@ struct ContentView: View {
                     .frame(width: 95, height: 95)
             }
             .buttonStyle(.plain)
-            
         }
         .padding(.vertical, 8)
     }
+    
     // MARK: - Modern Tabs
     var modernTabsView: some View {
         VStack(spacing: 12) {
@@ -403,18 +439,98 @@ struct ContentView: View {
             if currentTasks.isEmpty {
                 emptyStateView
             } else {
-                LazyVStack(spacing: 12) {
-                    ForEach(currentTasks.sorted(by: sortTasks)) { task in
-                        TaskCard(
-                            task: task,
-                            onComplete: { completeTask(task) },
-                            onEdit: { editTask(task) },
-                            onDelete: { deleteTask(task) }
-                        )
-                        .onTapGesture {
-                            selectedTask = task
+                LazyVStack(spacing: 16) {
+                    let grouped = groupTasksByProject(currentTasks)
+                    
+                    // Задачи без проекта
+                    if !grouped.withoutProject.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("📌 Без проекта")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.gray)
+                                .padding(.leading, 4)
+                            
+                            ForEach(grouped.withoutProject) { task in
+                                TaskCard(
+                                    task: task,
+                                    onComplete: { completeTask(task) },
+                                    onEdit: { editTask(task) },
+                                    onDelete: { deleteTask(task) }
+                                )
+                                .onTapGesture {
+                                    selectedTask = task
+                                }
+                            }
                         }
-                        .transition(.scale.combined(with: .opacity))
+                    }
+                    
+                    // Задачи по проектам
+                    ForEach(grouped.byProject.keys.sorted { $0.title < $1.title }, id: \.id) { project in
+                        VStack(alignment: .leading, spacing: 8) {
+                            Button {
+                                toggleProject(project.id)
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: isProjectExpanded(project.id) ? "chevron.down.circle.fill" : "chevron.right.circle.fill")
+                                        .foregroundColor(Color.customBlueLight)
+                                        .font(.title3)
+                                    
+                                    Image(systemName: "folder.fill")
+                                        .foregroundColor(Color.customBlueLight)
+                                        .font(.title3)
+                                    
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(project.title)
+                                            .font(.headline)
+                                            .foregroundColor(.primary)
+                                        
+                                        Text("\(grouped.byProject[project]?.count ?? 0) задач")
+                                            .font(.caption)
+                                            .foregroundColor(.gray)
+                                    }
+                                    
+                                    Spacer()
+                                    
+                                    let activeCount = grouped.byProject[project]?.filter { !$0.isCompleted && !$0.isArchived }.count ?? 0
+                                    if activeCount > 0 {
+                                        Text("\(activeCount)")
+                                            .font(.caption)
+                                            .fontWeight(.semibold)
+                                            .foregroundColor(.white)
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 4)
+                                            .background(Color.customBlueLight)
+                                            .clipShape(Capsule())
+                                    }
+                                }
+                                .padding(12)
+                                .background(Color.adaptiveCard)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .stroke(Color.customBlueLight.opacity(0.3), lineWidth: 1)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            
+                            if isProjectExpanded(project.id) {
+                                VStack(spacing: 10) {
+                                    ForEach(grouped.byProject[project] ?? []) { task in
+                                        TaskCard(
+                                            task: task,
+                                            onComplete: { completeTask(task) },
+                                            onEdit: { editTask(task) },
+                                            onDelete: { deleteTask(task) }
+                                        )
+                                        .onTapGesture {
+                                            selectedTask = task
+                                        }
+                                    }
+                                }
+                                .padding(.leading, 8)
+                            }
+                        }
                     }
                 }
             }
@@ -443,11 +559,26 @@ struct ContentView: View {
     // MARK: - Projects View
     var projectsView: some View {
         VStack(spacing: 16) {
-            if projects.isEmpty {
+            HStack(spacing: 6) {
+                modernSubTab(
+                    title: "Рабочие",
+                    isSelected: selectedProjectTab == 0,
+                    action: { selectedProjectTab = 0 }
+                )
+                modernSubTab(
+                    title: "Личные",
+                    isSelected: selectedProjectTab == 1,
+                    action: { selectedProjectTab = 1 }
+                )
+            }
+            
+            let filteredProjects = projects.filter { $0.scope == (selectedProjectTab == 0 ? .work : .personal) && !$0.isArchived }
+            
+            if filteredProjects.isEmpty {
                 emptyProjectsView
             } else {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
-                    ForEach(projects) { project in
+                    ForEach(filteredProjects) { project in
                         ProjectCard(project: project)
                             .onTapGesture {
                                 selectedProject = project
@@ -506,6 +637,57 @@ struct ContentView: View {
         .padding(.bottom, 8)
     }
     
+    // MARK: - Task Actions
+    func completeTask(_ task: Task) {
+        if let index = workTasks.firstIndex(where: { $0.id == task.id }) {
+            workTasks[index].isCompleted = true
+            workTasks[index].isArchived = true
+        }
+        if let index = personalTasks.firstIndex(where: { $0.id == task.id }) {
+            personalTasks[index].isCompleted = true
+            personalTasks[index].isArchived = true
+        }
+        
+        for projectIndex in projects.indices {
+            if let taskIndex = projects[projectIndex].tasks.firstIndex(where: { $0.id == task.id }) {
+                projects[projectIndex].tasks[taskIndex].isCompleted = true
+                projects[projectIndex].tasks[taskIndex].isArchived = true
+                projects[projectIndex] = projects[projectIndex]
+            }
+        }
+        NotificationManager.shared.cancelNotification(for: task)
+        saveData()
+    }
+
+    func unarchiveTask(_ task: Task) {
+        if let index = workTasks.firstIndex(where: { $0.id == task.id }) {
+            workTasks[index].isArchived = false
+            workTasks[index].isCompleted = false
+        }
+        
+        if let index = personalTasks.firstIndex(where: { $0.id == task.id }) {
+            personalTasks[index].isArchived = false
+            personalTasks[index].isCompleted = false
+        }
+        
+        for projectIndex in projects.indices {
+            if let taskIndex = projects[projectIndex].tasks.firstIndex(where: { $0.id == task.id }) {
+                projects[projectIndex].tasks[taskIndex].isArchived = false
+                projects[projectIndex].tasks[taskIndex].isCompleted = false
+                projects[projectIndex] = projects[projectIndex]
+            }
+        }
+        saveData()
+    }
+
+    func unarchiveProject(_ project: Project) {
+        if let index = projects.firstIndex(where: { $0.id == project.id }) {
+            projects[index].isArchived = false
+            projects = projects
+        }
+        saveData()
+    }
+    
     // MARK: - Personal Sub Tab
     func personalSubTab(title: String, count: Int, isSelected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
@@ -555,8 +737,10 @@ extension ContentView {
         }
         
         if selectedTaskTab == 1 {
-            filtered = filtered.filter {
-                $0.personalType?.rawValue == (personalSubTab == 0 ? "Дело" : "Мечта")
+            if personalSubTab == 0 {
+                filtered = filtered.filter { $0.personalType == .chore || $0.personalType == nil }
+            } else {
+                filtered = filtered.filter { $0.personalType == .dream || $0.personalType == nil }
             }
         }
         
@@ -569,70 +753,6 @@ extension ContentView {
         }
         
         return filtered
-    }
-    
-    func sortTasks(_ a: Task, _ b: Task) -> Bool {
-        switch sortType {
-        case .created:
-            return a.createdAt > b.createdAt
-        case .deadline:
-            return (a.deadline ?? .distantFuture) < (b.deadline ?? .distantFuture)
-        case .priority:
-            let order: [Task.Priority] = [.high, .medium, .low]
-            return order.firstIndex(of: a.priority)! < order.firstIndex(of: b.priority)!
-        }
-    }
-    
-
-    func unarchiveTask(_ task: Task) {
-        // Находим задачу и убираем флаг isArchived
-        if let index = workTasks.firstIndex(where: { $0.id == task.id }) {
-            workTasks[index].isArchived = false
-            workTasks[index].isCompleted = false // опционально
-        }
-        
-        if let index = personalTasks.firstIndex(where: { $0.id == task.id }) {
-            personalTasks[index].isArchived = false
-            personalTasks[index].isCompleted = false
-        }
-        
-        for projectIndex in projects.indices {
-            if let taskIndex = projects[projectIndex].tasks.firstIndex(where: { $0.id == task.id }) {
-                projects[projectIndex].tasks[taskIndex].isArchived = false
-                projects[projectIndex].tasks[taskIndex].isCompleted = false
-                projects[projectIndex] = projects[projectIndex]
-            }
-        }
-        saveData()
-    }
-
-    func unarchiveProject(_ project: Project) {
-        if let index = projects.firstIndex(where: { $0.id == project.id }) {
-            projects[index].isArchived = false
-            projects = projects
-        }
-        saveData()
-    }
-    
-    func completeTask(_ task: Task) {
-        if let index = workTasks.firstIndex(where: { $0.id == task.id }) {
-            workTasks[index].isCompleted = true
-            workTasks[index].isArchived = true  // ✅ добавить эту строку
-        }
-        if let index = personalTasks.firstIndex(where: { $0.id == task.id }) {
-            personalTasks[index].isCompleted = true
-            personalTasks[index].isArchived = true  // ✅ добавить эту строку
-        }
-        
-        for projectIndex in projects.indices {
-            if let taskIndex = projects[projectIndex].tasks.firstIndex(where: { $0.id == task.id }) {
-                projects[projectIndex].tasks[taskIndex].isCompleted = true
-                projects[projectIndex].tasks[taskIndex].isArchived = true  // ✅ добавить эту строку
-                projects[projectIndex] = projects[projectIndex]
-            }
-        }
-        NotificationManager.shared.cancelNotification(for: task)
-        saveData()
     }
     
     // MARK: - Project Management
@@ -678,7 +798,7 @@ extension ContentView {
     ) {
         let task = Task(
             title: title,
-            description: description,    
+            description: description,
             deadline: deadline,
             personalType: type,
             priority: priority,
@@ -835,4 +955,8 @@ struct ProjectCard: View {
                 .stroke(Color.gray.opacity(0.1), lineWidth: 1)
         )
     }
+}
+
+#Preview {
+    ContentView()
 }
