@@ -26,12 +26,20 @@ struct Project: Identifiable, Codable {
         self.createdAt = createdAt
     }
     
+    var completedTasksCount: Int {
+        tasks.filter { $0.isCompleted }.count  // ← убираем && !$0.isArchived
+    }
+
     var activeTasksCount: Int {
         tasks.filter { !$0.isCompleted && !$0.isArchived }.count
     }
     
-    var completedTasksCount: Int {
-        tasks.filter { $0.isCompleted && !$0.isArchived }.count
+    var archivedTasksCount: Int {
+        tasks.filter { $0.isArchived }.count
+    }
+
+    var totalTasksCount: Int {
+        tasks.count
     }
     
     // MARK: - Codable

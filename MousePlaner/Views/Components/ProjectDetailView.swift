@@ -17,6 +17,7 @@ struct ProjectDetailView: View {
     @State private var tasks: [Task]
     @State private var showAddTask = false
     @State private var selectedTask: Task?
+    @State private var refreshTrigger = false
     
     init(
         project: Project,
@@ -179,28 +180,37 @@ struct ProjectDetailView: View {
             Divider()
                 .background(Color.white.opacity(0.3))
             
+            // Прогресс-бар вместо старых бейджей
             if !isEditing {
-                HStack(spacing: 20) {
-                    StatBadge(
-                        icon: "checkmark.circle",
-                        value: "\(activeTasksCount)",
-                        label: "активных",
-                        color: .green
-                    )
+                VStack(spacing: 8) {
+                    let totalTasks = tasks.count
+                    let completed = completedTasksCount
+                    let progress = totalTasks == 0 ? 0 : Double(completed) / Double(totalTasks)
                     
-                    StatBadge(
-                        icon: "checkmark.circle.fill",
-                        value: "\(completedTasksCount)",
-                        label: "завершено",
-                        color: .gray
-                    )
+                    GeometryReader { geometry in
+                        ZStack(alignment: .leading) {
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(Color.white.opacity(0.2))
+                                .frame(height: 8)
+                            
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(Color.green)
+                                .frame(width: geometry.size.width * progress, height: 8)
+                        }
+                    }
+                    .frame(height: 8)
                     
-                    StatBadge(
-                        icon: "folder",
-                        value: "\(tasks.count)",
-                        label: "всего",
-                        color: .blue
-                    )
+                    HStack {
+                        Text("\(completed) из \(totalTasks) завершено")
+                            .font(.caption)
+                            .foregroundColor(.white.opacity(0.7))
+                        
+                        Spacer()
+                        
+                        Text("\(activeTasksCount) активных")
+                            .font(.caption)
+                            .foregroundColor(.green)
+                    }
                 }
                 .padding(.vertical, 4)
             }
@@ -293,6 +303,7 @@ struct ProjectDetailView: View {
                         .buttonStyle(.plain)
                     }
                 }
+                .id(refreshTrigger)
             }
         }
         .padding(20)
@@ -340,7 +351,11 @@ struct ProjectDetailView: View {
     }
     
     private var completedTasksCount: Int {
-        tasks.filter { $0.isCompleted && !$0.isArchived }.count
+        tasks.filter { $0.isCompleted }.count
+    }
+    
+    private var archivedTasksCount: Int {
+        tasks.filter { $0.isArchived }.count
     }
     
     // MARK: - Task Management
@@ -360,9 +375,16 @@ struct ProjectDetailView: View {
     
     private func completeTask(_ task: Task) {
         if let index = tasks.firstIndex(where: { $0.id == task.id }) {
+            // Меняем состояние
             tasks[index].isCompleted.toggle()
             tasks[index].isArchived = tasks[index].isCompleted
+            
+            // Сохраняем изменения
             saveChanges()
+            refreshTrigger.toggle()
+            
+            // Принудительно обновляем массив, чтобы триггернуть UI
+            tasks = tasks.map { $0 }
         }
     }
     
@@ -388,30 +410,5 @@ struct ProjectDetailView: View {
             tasks[index].deadline = newDeadline
             saveChanges()
         }
-    }
-}
-
-// MARK: - Stat Badge Component
-struct StatBadge: View {
-    let icon: String
-    let value: String
-    let label: String
-    let color: Color
-    
-    var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: icon)
-                .font(.caption)
-            Text(value)
-                .font(.headline)
-                .fontWeight(.semibold)
-            Text(label)
-                .font(.caption2)
-        }
-        .foregroundColor(color)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .background(color.opacity(0.2))
-        .clipShape(Capsule())
     }
 }

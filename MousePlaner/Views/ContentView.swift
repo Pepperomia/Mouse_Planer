@@ -1,6 +1,7 @@
 // ContentView.swift
 import SwiftUI
 import UserNotifications
+import Combine
 
 // MARK: - Main ContentView
 struct ContentView: View {
@@ -25,6 +26,8 @@ struct ContentView: View {
     @State private var expandedProjects: Set<UUID> = []
     
     @State private var selectedProjectTab = 0
+    @State private var refreshTrigger = false
+
     
     enum SortType {
         case created, deadline, priority
@@ -34,6 +37,7 @@ struct ContentView: View {
     @State private var showAdd = false
     @State private var showAddProject = false
     @State private var showSettings = false
+    
     
     // MARK: - Update App Badge
     private func updateAppBadge() {
@@ -121,17 +125,21 @@ struct ContentView: View {
         updateAllNotifications()
     }
     
+    private let objectWillChange = ObservableObjectPublisher()
+    
     // MARK: - Task Actions
     func completeTask(_ task: Task) {
+        // Обновляем в workTasks
         if let index = workTasks.firstIndex(where: { $0.id == task.id }) {
             workTasks[index].isCompleted = true
             workTasks[index].isArchived = true
         }
+        // Обновляем в personalTasks
         if let index = personalTasks.firstIndex(where: { $0.id == task.id }) {
             personalTasks[index].isCompleted = true
             personalTasks[index].isArchived = true
         }
-        
+        // Обновляем в проектах
         for projectIndex in projects.indices {
             if let taskIndex = projects[projectIndex].tasks.firstIndex(where: { $0.id == task.id }) {
                 projects[projectIndex].tasks[taskIndex].isCompleted = true
@@ -139,9 +147,13 @@ struct ContentView: View {
                 projects[projectIndex] = projects[projectIndex]
             }
         }
+        
         NotificationManager.shared.cancelNotification(for: task)
         saveData()
         updateAppBadge()
+        
+        // Принудительное обновление UI
+        refreshTrigger.toggle()
     }
     
     func unarchiveTask(_ task: Task) {
@@ -164,6 +176,7 @@ struct ContentView: View {
         }
         saveData()
         updateAppBadge()
+        objectWillChange.send()
     }
     
     func unarchiveProject(_ project: Project) {
@@ -786,6 +799,7 @@ struct ContentView: View {
                         }
                     }
                 }
+                .id(refreshTrigger)
             }
         }
     }
@@ -799,39 +813,22 @@ struct ContentView: View {
             allTasks.append(contentsOf: project.tasks)
         }
         
-        print("📊 ДИАГНОСТИКА currentTasks:")
-        print("   workTasks.count = \(workTasks.count)")
-        print("   personalTasks.count = \(personalTasks.count)")
-        print("   проектов = \(projects.count)")
-        print("   всего задач = \(allTasks.count)")
-        
-        for task in allTasks {
-            print("   - \(task.title): isCompleted=\(task.isCompleted), isArchived=\(task.isArchived)")
-        }
-        
         // Фильтруем: только НЕ завершённые и НЕ архивные
         var filtered = allTasks.filter { !$0.isCompleted && !$0.isArchived }
-        print("   после фильтрации active: \(filtered.count)")
         
         if selectedTaskTab == 0 {
             filtered = filtered.filter { $0.scope == .work }
-            print("   после фильтрации по работе: \(filtered.count)")
         } else {
             filtered = filtered.filter { $0.scope == .personal }
-            print("   после фильтрации по личным: \(filtered.count)")
         }
         
         if let selectedPriority {
             filtered = filtered.filter { $0.priority == selectedPriority }
-            print("   после фильтрации по приоритету: \(filtered.count)")
         }
         
         if onlyWithDeadline {
             filtered = filtered.filter { $0.deadline != nil }
-            print("   после фильтрации по дедлайну: \(filtered.count)")
         }
-        
-        print("   ИТОГОВО задач для отображения: \(filtered.count)")
         
         return filtered
     }
