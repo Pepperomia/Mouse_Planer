@@ -1,5 +1,6 @@
 // ContentView.swift
 import SwiftUI
+import UserNotifications
 
 // MARK: - Main ContentView
 struct ContentView: View {
@@ -33,6 +34,21 @@ struct ContentView: View {
     @State private var showAdd = false
     @State private var showAddProject = false
     @State private var showSettings = false
+    
+    // MARK: - Update App Badge
+    private func updateAppBadge() {
+        let allTasks = workTasks + personalTasks + projects.flatMap { $0.tasks }
+        let activeCount = allTasks.filter { !$0.isCompleted && !$0.isArchived }.count
+        
+        // Современный способ для iOS 17+
+        UNUserNotificationCenter.current().setBadgeCount(activeCount) { error in
+            if let error = error {
+                print("❌ Ошибка установки бейджа: \(error)")
+            } else {
+                print("📱 Бейдж обновлён: \(activeCount)")
+            }
+        }
+    }
     
     // MARK: - Computed Properties
     var activeCount: Int {
@@ -87,6 +103,7 @@ struct ContentView: View {
             personalTasks = loaded.personalTasks
             projects = loaded.projects
             updateAllNotifications()
+            updateAppBadge()
         }
     }
     
@@ -124,6 +141,7 @@ struct ContentView: View {
         }
         NotificationManager.shared.cancelNotification(for: task)
         saveData()
+        updateAppBadge()
     }
     
     func unarchiveTask(_ task: Task) {
@@ -145,6 +163,7 @@ struct ContentView: View {
             }
         }
         saveData()
+        updateAppBadge()
     }
     
     func unarchiveProject(_ project: Project) {
@@ -153,6 +172,7 @@ struct ContentView: View {
             projects = projects
         }
         saveData()
+        updateAppBadge()
     }
     
     // MARK: - Project Management
@@ -165,6 +185,7 @@ struct ContentView: View {
         )
         projects.append(newProject)
         saveData()
+        updateAppBadge()
     }
     
     func updateProject(_ updatedProject: Project) {
@@ -173,11 +194,13 @@ struct ContentView: View {
             projects = projects
         }
         saveData()
+        updateAppBadge()
     }
     
     func deleteProject(_ project: Project) {
         projects.removeAll { $0.id == project.id }
         saveData()
+        updateAppBadge()
     }
     
     func archiveProject(_ project: Project) {
@@ -211,6 +234,7 @@ struct ContentView: View {
             personalTasks.append(task)
         }
         saveData()
+        updateAppBadge()
     }
     
     func updateTask(
@@ -397,6 +421,9 @@ struct ContentView: View {
             .onAppear {
                 loadData()
                 NotificationManager.shared.requestAuthorization()
+                
+                // Сбрасываем бейдж при открытии приложения
+                UNUserNotificationCenter.current().setBadgeCount(0) { _ in }
             }
         }
     }
@@ -1048,6 +1075,7 @@ struct ProjectCard: View {
         )
     }
 }
+
 
 #Preview {
     ContentView()
