@@ -10,7 +10,7 @@ struct ContentView: View {
     @State private var projects: [Project] = []
     
     // MARK: - UI
-    @State private var selectedMainTab = 0
+    @State private var selectedMainTab = 0  // 0 - Задачи, 1 - Проекты, 2 - Цели
     @State private var selectedTaskTab = 0
     @State private var personalSubTab = 0
     
@@ -41,14 +41,14 @@ struct ContentView: View {
         let allTasksWithProjects = allTasks + projectTasks
         return allTasksWithProjects.filter { !$0.isCompleted && !$0.isArchived }.count
     }
-
+    
     var archivedTasks: [Task] {
         let allTasks = workTasks + personalTasks
         let projectTasks = projects.flatMap { $0.tasks }
         let allTasksWithProjects = allTasks + projectTasks
         return allTasksWithProjects.filter { $0.isArchived }
     }
-
+    
     var archivedProjects: [Project] {
         projects.filter { $0.isArchived }
     }
@@ -94,7 +94,7 @@ struct ContentView: View {
         let allTasks = workTasks + personalTasks + projects.flatMap { $0.tasks }
         NotificationManager.shared.scheduleAllTasksNotifications(tasks: allTasks)
     }
-
+    
     private func saveData() {
         DataManager.shared.save(
             workTasks: workTasks,
@@ -104,35 +104,246 @@ struct ContentView: View {
         updateAllNotifications()
     }
     
+    // MARK: - Task Actions
+    func completeTask(_ task: Task) {
+        if let index = workTasks.firstIndex(where: { $0.id == task.id }) {
+            workTasks[index].isCompleted = true
+            workTasks[index].isArchived = true
+        }
+        if let index = personalTasks.firstIndex(where: { $0.id == task.id }) {
+            personalTasks[index].isCompleted = true
+            personalTasks[index].isArchived = true
+        }
+        
+        for projectIndex in projects.indices {
+            if let taskIndex = projects[projectIndex].tasks.firstIndex(where: { $0.id == task.id }) {
+                projects[projectIndex].tasks[taskIndex].isCompleted = true
+                projects[projectIndex].tasks[taskIndex].isArchived = true
+                projects[projectIndex] = projects[projectIndex]
+            }
+        }
+        NotificationManager.shared.cancelNotification(for: task)
+        saveData()
+    }
+    
+    func unarchiveTask(_ task: Task) {
+        if let index = workTasks.firstIndex(where: { $0.id == task.id }) {
+            workTasks[index].isArchived = false
+            workTasks[index].isCompleted = false
+        }
+        
+        if let index = personalTasks.firstIndex(where: { $0.id == task.id }) {
+            personalTasks[index].isArchived = false
+            personalTasks[index].isCompleted = false
+        }
+        
+        for projectIndex in projects.indices {
+            if let taskIndex = projects[projectIndex].tasks.firstIndex(where: { $0.id == task.id }) {
+                projects[projectIndex].tasks[taskIndex].isArchived = false
+                projects[projectIndex].tasks[taskIndex].isCompleted = false
+                projects[projectIndex] = projects[projectIndex]
+            }
+        }
+        saveData()
+    }
+    
+    func unarchiveProject(_ project: Project) {
+        if let index = projects.firstIndex(where: { $0.id == project.id }) {
+            projects[index].isArchived = false
+            projects = projects
+        }
+        saveData()
+    }
+    
+    // MARK: - Project Management
+    func addProject(title: String, description: String?, scope: TaskScope) {
+        let newProject = Project(
+            title: title,
+            description: description,
+            scope: scope,
+            tasks: []
+        )
+        projects.append(newProject)
+        saveData()
+    }
+    
+    func updateProject(_ updatedProject: Project) {
+        if let index = projects.firstIndex(where: { $0.id == updatedProject.id }) {
+            projects[index] = updatedProject
+            projects = projects
+        }
+        saveData()
+    }
+    
+    func deleteProject(_ project: Project) {
+        projects.removeAll { $0.id == project.id }
+        saveData()
+    }
+    
+    func archiveProject(_ project: Project) {
+        if let index = projects.firstIndex(where: { $0.id == project.id }) {
+            projects[index].isArchived = true
+            projects = projects
+        }
+        saveData()
+    }
+    
+    // MARK: - Task Management
+    func addTask(
+        title: String,
+        description: String,
+        deadline: Date?,
+        type: Task.PersonalType?,
+        priority: Task.Priority
+    ) {
+        let task = Task(
+            title: title,
+            description: description,
+            deadline: deadline,
+            personalType: type,
+            priority: priority,
+            scope: selectedTaskTab == 0 ? .work : .personal
+        )
+        
+        if selectedTaskTab == 0 {
+            workTasks.append(task)
+        } else {
+            personalTasks.append(task)
+        }
+        saveData()
+    }
+    
+    func updateTask(
+        _ task: Task,
+        _ newTitle: String,
+        _ newDescription: String?,
+        _ newDeadline: Date?
+    ) {
+        if let index = workTasks.firstIndex(where: { $0.id == task.id }) {
+            workTasks[index].title = newTitle
+            workTasks[index].description = newDescription
+            workTasks[index].deadline = newDeadline
+        }
+        
+        if let index = personalTasks.firstIndex(where: { $0.id == task.id }) {
+            personalTasks[index].title = newTitle
+            personalTasks[index].description = newDescription
+            personalTasks[index].deadline = newDeadline
+        }
+        
+        for projectIndex in projects.indices {
+            if let taskIndex = projects[projectIndex].tasks.firstIndex(where: { $0.id == task.id }) {
+                projects[projectIndex].tasks[taskIndex].title = newTitle
+                projects[projectIndex].tasks[taskIndex].description = newDescription
+                projects[projectIndex].tasks[taskIndex].deadline = newDeadline
+                projects[projectIndex] = projects[projectIndex]
+            }
+        }
+        saveData()
+    }
+    
+    func editTask(_ task: Task) {
+        selectedTask = task
+    }
+    
+    func deleteTask(_ task: Task) {
+        workTasks.removeAll { $0.id == task.id }
+        personalTasks.removeAll { $0.id == task.id }
+        
+        for projectIndex in projects.indices {
+            projects[projectIndex].tasks.removeAll { $0.id == task.id }
+        }
+        saveData()
+    }
+    
+    // MARK: - Body
     // MARK: - Body
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 header
-                addButtonView
-                ScrollView {
-                    VStack(spacing: 20) {
-                        modernTabsView
-                        
-                        if selectedMainTab == 0 {
+                
+                // Табы навигации (Задачи, Проекты, Цели) — остаются на месте
+                modernTabsView
+                
+                // Основной контент с скроллом
+                TabView(selection: $selectedMainTab) {
+                    // Вкладка Задачи
+                    ScrollView {
+                        VStack(spacing: 16) {
+                            // Кнопка добавления
+                            addButtonView
+                                .padding(.horizontal, 16)
+                                .padding(.top, 8)
+                            
+                            // Фильтры
                             filtersContainer
+                            
+                            // Список задач
                             taskListView
-                        } else {
-                            projectsView
+                                .padding(.horizontal, 16)
                         }
+                        .padding(.bottom, 20)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
+                    .background(
+                        LinearGradient.customBlueGradient
+                            .opacity(0.05)
+                            .ignoresSafeArea()
+                    )
+                    .scrollIndicators(.hidden)
+                    .tag(0)
+                    
+                    // Вкладка Проекты
+                    ScrollView {
+                        VStack(spacing: 16) {
+                            // Табы проектов (Рабочие/Личные)
+                            HStack(spacing: 6) {
+                                modernSubTab(
+                                    title: "Рабочие",
+                                    isSelected: selectedProjectTab == 0,
+                                    action: { selectedProjectTab = 0 }
+                                )
+                                modernSubTab(
+                                    title: "Личные",
+                                    isSelected: selectedProjectTab == 1,
+                                    action: { selectedProjectTab = 1 }
+                                )
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.top, 8)
+                            
+                            // Кнопка добавления
+                            addButtonView
+                                .padding(.horizontal, 16)
+                            
+                            // Список проектов
+                            projectsView
+                                .padding(.horizontal, 16)
+                        }
+                        .padding(.bottom, 20)
+                    }
+                    .background(
+                        LinearGradient.customBlueGradient
+                            .opacity(0.05)
+                            .ignoresSafeArea()
+                    )
+                    .scrollIndicators(.hidden)
+                    .tag(1)
+                    
+                    // Вкладка Цели
+                    GoalsView()
+                        .background(
+                            LinearGradient.customBlueGradient
+                                .opacity(0.05)
+                                .ignoresSafeArea()
+                        )
+                        .tag(2)
                 }
-                .background(
-                    LinearGradient.customBlueGradient
-                        .opacity(0.05)
-                        .ignoresSafeArea()
-                )
-                .scrollIndicators(.hidden)
+                .tabViewStyle(.page(indexDisplayMode: .never))
+                .animation(.easeInOut(duration: 0.3), value: selectedMainTab)
             }
             
-            // Добавление задачи
+            // Sheets
             .sheet(isPresented: $showAdd) {
                 AddTaskSheet(scope: selectedTaskTab == 0 ? .work : .personal) { title, description, deadline, priority in
                     addTask(
@@ -145,7 +356,6 @@ struct ContentView: View {
                 }
             }
             
-            // Добавление проекта
             .sheet(isPresented: $showAddProject) {
                 AddProjectSheet(
                     scope: selectedProjectTab == 0 ? .work : .personal
@@ -158,7 +368,6 @@ struct ContentView: View {
                 }
             }
             
-            // Детали задачи
             .sheet(item: $selectedTask) { task in
                 TaskDetailView(
                     task: task,
@@ -170,7 +379,6 @@ struct ContentView: View {
                 )
             }
             
-            // Детали проекта
             .sheet(item: $selectedProject) { project in
                 ProjectDetailView(
                     project: project,
@@ -193,35 +401,56 @@ struct ContentView: View {
         }
     }
     
+    // MARK: - Archive Button
+    var archiveButton: some View {
+        NavigationLink(destination: ArchiveView(
+            archivedTasks: archivedTasks,
+            archivedProjects: archivedProjects,
+            onUnarchiveTask: { task in unarchiveTask(task) },
+            onUnarchiveProject: { project in unarchiveProject(project) },
+            onDeleteTask: { task in deleteTask(task) },
+            onDeleteProject: { project in deleteProject(project) }
+        )) {
+            Image("Mouse_Done")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 90, height: 90)
+                .shadow(color: Color.customBlueLight.opacity(0.3), radius: 5)
+        }
+        .buttonStyle(.plain)
+    }
+    
     // MARK: - Header
     var header: some View {
         HStack(spacing: 16) {
             Button {
                 showSettings = true
             } label: {
-                Image(selectedMainTab == 0 ? "Mouse_Plan" : "Mouse_Project")
+                Image(selectedMainTab == 0 ? "Mouse_Plan" : selectedMainTab == 1 ? "Mouse_Project" : "Mouse_Bow")
                     .resizable()
                     .scaledToFit()
                     .frame(width: 100, height: 100)
                     .shadow(color: Color.customBlueLight.opacity(0.3), radius: 10)
-                    .scaleEffect(selectedMainTab == 0 ? 1.0 : 0.95)
+                    .scaleEffect(selectedMainTab == 0 ? 1.0 : selectedMainTab == 1 ? 0.95 : 0.9)
                     .animation(.spring(response: 0.6, dampingFraction: 0.7), value: selectedMainTab)
             }
             .buttonStyle(.plain)
             
             VStack(alignment: .leading, spacing: 6) {
-                Text(selectedMainTab == 0 ? "Мои задачи" : "Мои проекты")
+                Text(selectedMainTab == 0 ? "Мои задачи" : selectedMainTab == 1 ? "Мои проекты" : "Мои цели")
                     .font(.title2.weight(.semibold))
                     .foregroundStyle(LinearGradient.customBlueGradient)
                 
                 HStack(spacing: 8) {
-                    Image(systemName: selectedMainTab == 0 ? "checkmark.circle" : "folder")
+                    Image(systemName: selectedMainTab == 0 ? "checkmark.circle" : selectedMainTab == 1 ? "folder" : "target")
                         .font(.caption)
                         .foregroundColor(Color.customBlueLight)
                     
                     Text(selectedMainTab == 0
                          ? "\(activeCount) активных задач"
-                         : "\(projects.count) проектов")
+                         : selectedMainTab == 1
+                         ? "\(projects.count) проектов"
+                         : "Скоро здесь появятся цели")
                         .font(.subheadline)
                         .foregroundColor(.gray)
                 }
@@ -229,22 +458,11 @@ struct ContentView: View {
             
             Spacer()
             
-            NavigationLink(destination: ArchiveView(
-                archivedTasks: archivedTasks,
-                archivedProjects: archivedProjects,
-                onUnarchiveTask: { task in unarchiveTask(task) },
-                onUnarchiveProject: { project in unarchiveProject(project) },
-                onDeleteTask: { task in deleteTask(task) },
-                onDeleteProject: { project in deleteProject(project) }
-            )) {
-                Image("Mouse_Done")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 95, height: 95)
-            }
-            .buttonStyle(.plain)
+            // ✅ Кнопка архива в правом верхнем углу
+            archiveButton
         }
         .padding(.vertical, 8)
+        .padding(.horizontal, 16)
     }
     
     // MARK: - Modern Tabs
@@ -262,7 +480,14 @@ struct ContentView: View {
                     isSelected: selectedMainTab == 1,
                     action: { selectedMainTab = 1 }
                 )
+                
+                modernTab(
+                    title: "Цели",
+                    isSelected: selectedMainTab == 2,
+                    action: { selectedMainTab = 2 }
+                )
             }
+            .padding(.horizontal, 16)
             
             if selectedMainTab == 0 {
                 HStack(spacing: 6) {
@@ -278,6 +503,7 @@ struct ContentView: View {
                         action: { selectedTaskTab = 1 }
                     )
                 }
+                .padding(.horizontal, 16)
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
@@ -414,6 +640,7 @@ struct ContentView: View {
     }
     
     // MARK: - Task List
+    // MARK: - Task List
     var taskListView: some View {
         VStack(spacing: 16) {
             if selectedTaskTab == 1 {
@@ -438,11 +665,11 @@ struct ContentView: View {
             
             if currentTasks.isEmpty {
                 emptyStateView
+                    .padding(.top, 40)
             } else {
                 LazyVStack(spacing: 16) {
                     let grouped = groupTasksByProject(currentTasks)
                     
-                    // Задачи без проекта
                     if !grouped.withoutProject.isEmpty {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("📌 Без проекта")
@@ -465,7 +692,6 @@ struct ContentView: View {
                         }
                     }
                     
-                    // Задачи по проектам
                     ForEach(grouped.byProject.keys.sorted { $0.title < $1.title }, id: \.id) { project in
                         VStack(alignment: .leading, spacing: 8) {
                             Button {
@@ -537,6 +763,52 @@ struct ContentView: View {
         }
     }
     
+    var currentTasks: [Task] {
+        var allTasks: [Task] = []
+        allTasks.append(contentsOf: workTasks)
+        allTasks.append(contentsOf: personalTasks)
+        
+        for project in projects {
+            allTasks.append(contentsOf: project.tasks)
+        }
+        
+        print("📊 ДИАГНОСТИКА currentTasks:")
+        print("   workTasks.count = \(workTasks.count)")
+        print("   personalTasks.count = \(personalTasks.count)")
+        print("   проектов = \(projects.count)")
+        print("   всего задач = \(allTasks.count)")
+        
+        for task in allTasks {
+            print("   - \(task.title): isCompleted=\(task.isCompleted), isArchived=\(task.isArchived)")
+        }
+        
+        // Фильтруем: только НЕ завершённые и НЕ архивные
+        var filtered = allTasks.filter { !$0.isCompleted && !$0.isArchived }
+        print("   после фильтрации active: \(filtered.count)")
+        
+        if selectedTaskTab == 0 {
+            filtered = filtered.filter { $0.scope == .work }
+            print("   после фильтрации по работе: \(filtered.count)")
+        } else {
+            filtered = filtered.filter { $0.scope == .personal }
+            print("   после фильтрации по личным: \(filtered.count)")
+        }
+        
+        if let selectedPriority {
+            filtered = filtered.filter { $0.priority == selectedPriority }
+            print("   после фильтрации по приоритету: \(filtered.count)")
+        }
+        
+        if onlyWithDeadline {
+            filtered = filtered.filter { $0.deadline != nil }
+            print("   после фильтрации по дедлайну: \(filtered.count)")
+        }
+        
+        print("   ИТОГОВО задач для отображения: \(filtered.count)")
+        
+        return filtered
+    }
+    
     var emptyStateView: some View {
         VStack(spacing: 16) {
             Image(systemName: "checkmark.circle.badge.plus")
@@ -559,23 +831,11 @@ struct ContentView: View {
     // MARK: - Projects View
     var projectsView: some View {
         VStack(spacing: 16) {
-            HStack(spacing: 6) {
-                modernSubTab(
-                    title: "Рабочие",
-                    isSelected: selectedProjectTab == 0,
-                    action: { selectedProjectTab = 0 }
-                )
-                modernSubTab(
-                    title: "Личные",
-                    isSelected: selectedProjectTab == 1,
-                    action: { selectedProjectTab = 1 }
-                )
-            }
-            
             let filteredProjects = projects.filter { $0.scope == (selectedProjectTab == 0 ? .work : .personal) && !$0.isArchived }
             
             if filteredProjects.isEmpty {
                 emptyProjectsView
+                    .padding(.top, 40)
             } else {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
                     ForEach(filteredProjects) { project in
@@ -613,7 +873,7 @@ struct ContentView: View {
         Button {
             if selectedMainTab == 0 {
                 showAdd = true
-            } else {
+            } else if selectedMainTab == 1 {
                 showAddProject = true
             }
         } label: {
@@ -632,60 +892,6 @@ struct ContentView: View {
             )
             .clipShape(RoundedRectangle(cornerRadius: 30))
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
-        .padding(.bottom, 8)
-    }
-    
-    // MARK: - Task Actions
-    func completeTask(_ task: Task) {
-        if let index = workTasks.firstIndex(where: { $0.id == task.id }) {
-            workTasks[index].isCompleted = true
-            workTasks[index].isArchived = true
-        }
-        if let index = personalTasks.firstIndex(where: { $0.id == task.id }) {
-            personalTasks[index].isCompleted = true
-            personalTasks[index].isArchived = true
-        }
-        
-        for projectIndex in projects.indices {
-            if let taskIndex = projects[projectIndex].tasks.firstIndex(where: { $0.id == task.id }) {
-                projects[projectIndex].tasks[taskIndex].isCompleted = true
-                projects[projectIndex].tasks[taskIndex].isArchived = true
-                projects[projectIndex] = projects[projectIndex]
-            }
-        }
-        NotificationManager.shared.cancelNotification(for: task)
-        saveData()
-    }
-
-    func unarchiveTask(_ task: Task) {
-        if let index = workTasks.firstIndex(where: { $0.id == task.id }) {
-            workTasks[index].isArchived = false
-            workTasks[index].isCompleted = false
-        }
-        
-        if let index = personalTasks.firstIndex(where: { $0.id == task.id }) {
-            personalTasks[index].isArchived = false
-            personalTasks[index].isCompleted = false
-        }
-        
-        for projectIndex in projects.indices {
-            if let taskIndex = projects[projectIndex].tasks.firstIndex(where: { $0.id == task.id }) {
-                projects[projectIndex].tasks[taskIndex].isArchived = false
-                projects[projectIndex].tasks[taskIndex].isCompleted = false
-                projects[projectIndex] = projects[projectIndex]
-            }
-        }
-        saveData()
-    }
-
-    func unarchiveProject(_ project: Project) {
-        if let index = projects.firstIndex(where: { $0.id == project.id }) {
-            projects[index].isArchived = false
-            projects = projects
-        }
-        saveData()
     }
     
     // MARK: - Personal Sub Tab
@@ -713,147 +919,6 @@ struct ContentView: View {
             )
             .foregroundColor(isSelected ? Color.customBlueLight : .gray)
         }
-    }
-}
-
-// MARK: - Logic Extension
-extension ContentView {
-    
-    var currentTasks: [Task] {
-        var allTasks: [Task] = []
-        allTasks.append(contentsOf: workTasks)
-        allTasks.append(contentsOf: personalTasks)
-        
-        for project in projects {
-            allTasks.append(contentsOf: project.tasks)
-        }
-        
-        var filtered = allTasks.filter { !$0.isCompleted && !$0.isArchived }
-        
-        if selectedTaskTab == 0 {
-            filtered = filtered.filter { $0.scope == .work }
-        } else {
-            filtered = filtered.filter { $0.scope == .personal }
-        }
-        
-        if selectedTaskTab == 1 {
-            if personalSubTab == 0 {
-                filtered = filtered.filter { $0.personalType == .chore || $0.personalType == nil }
-            } else {
-                filtered = filtered.filter { $0.personalType == .dream || $0.personalType == nil }
-            }
-        }
-        
-        if let selectedPriority {
-            filtered = filtered.filter { $0.priority == selectedPriority }
-        }
-        
-        if onlyWithDeadline {
-            filtered = filtered.filter { $0.deadline != nil }
-        }
-        
-        return filtered
-    }
-    
-    // MARK: - Project Management
-    func addProject(title: String, description: String?, scope: TaskScope) {
-        let newProject = Project(
-            title: title,
-            description: description,
-            scope: scope,
-            tasks: []
-        )
-        projects.append(newProject)
-        saveData()
-    }
-    
-    func updateProject(_ updatedProject: Project) {
-        if let index = projects.firstIndex(where: { $0.id == updatedProject.id }) {
-            projects[index] = updatedProject
-            projects = projects
-        }
-        saveData()
-    }
-    
-    func deleteProject(_ project: Project) {
-        projects.removeAll { $0.id == project.id }
-        saveData()
-    }
-    
-    func archiveProject(_ project: Project) {
-        if let index = projects.firstIndex(where: { $0.id == project.id }) {
-            projects[index].isArchived = true
-            projects = projects
-        }
-        saveData()
-    }
-    
-    // MARK: - Task Management
-    func addTask(
-        title: String,
-        description: String,
-        deadline: Date?,
-        type: Task.PersonalType?,
-        priority: Task.Priority
-    ) {
-        let task = Task(
-            title: title,
-            description: description,
-            deadline: deadline,
-            personalType: type,
-            priority: priority,
-            scope: selectedTaskTab == 0 ? .work : .personal
-        )
-        
-        if selectedTaskTab == 0 {
-            workTasks.append(task)
-        } else {
-            personalTasks.append(task)
-        }
-        saveData()
-    }
-    
-    func updateTask(
-        _ task: Task,
-        _ newTitle: String,
-        _ newDescription: String?,
-        _ newDeadline: Date?
-    ) {
-        if let index = workTasks.firstIndex(where: { $0.id == task.id }) {
-            workTasks[index].title = newTitle
-            workTasks[index].description = newDescription
-            workTasks[index].deadline = newDeadline
-        }
-        
-        if let index = personalTasks.firstIndex(where: { $0.id == task.id }) {
-            personalTasks[index].title = newTitle
-            personalTasks[index].description = newDescription
-            personalTasks[index].deadline = newDeadline
-        }
-        
-        for projectIndex in projects.indices {
-            if let taskIndex = projects[projectIndex].tasks.firstIndex(where: { $0.id == task.id }) {
-                projects[projectIndex].tasks[taskIndex].title = newTitle
-                projects[projectIndex].tasks[taskIndex].description = newDescription
-                projects[projectIndex].tasks[taskIndex].deadline = newDeadline
-                projects[projectIndex] = projects[projectIndex]
-            }
-        }
-        saveData()
-    }
-    
-    func editTask(_ task: Task) {
-        selectedTask = task
-    }
-    
-    func deleteTask(_ task: Task) {
-        workTasks.removeAll { $0.id == task.id }
-        personalTasks.removeAll { $0.id == task.id }
-        
-        for projectIndex in projects.indices {
-            projects[projectIndex].tasks.removeAll { $0.id == task.id }
-        }
-        saveData()
     }
     
     // MARK: - Helpers
@@ -887,6 +952,33 @@ extension ContentView {
         case .medium: return Color(red: 1.0, green: 0.8, blue: 0.55)
         case .low: return Color(red: 0.65, green: 0.85, blue: 0.65)
         }
+    }
+}
+
+// MARK: - Goals View
+struct GoalsView: View {
+    var body: some View {
+        VStack(spacing: 20) {
+            Spacer()
+            
+            Image(systemName: "target")
+                .font(.system(size: 80))
+                .foregroundColor(Color.customBlueLight.opacity(0.6))
+            
+            Text("Цели")
+                .font(.largeTitle)
+                .fontWeight(.bold)
+                .foregroundColor(Color.customBlueLight)
+            
+            Text("Здесь будут собираться ваши цели\nи отслеживаться прогресс")
+                .font(.body)
+                .multilineTextAlignment(.center)
+                .foregroundColor(.gray)
+                .padding(.horizontal, 32)
+            
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
